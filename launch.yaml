@@ -1,0 +1,166 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Create an EC2 instance with configurable instance name, instance size, root volume size, security groups, additional volume, VPC, subnet, private IP address, Key Pair, and operating system.
+
+Parameters:
+  InstanceName:
+    Description: Name for the EC2 instance
+    Type: String
+    Default: MyInstance
+    ConstraintDescription: Please enter a valid instance name.
+
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - c5.18xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.12xlarge
+      - m5.24xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.12xlarge
+      - r5.24xlarge
+      - r6in.2xlarge
+      - r6i.4xlarge
+    ConstraintDescription: Please select a valid EC2 instance type.
+
+  RootVolumeSize:
+    Description: Size (in GiB) of the root volume
+    Type: Number
+    Default: 8
+    MinValue: 8
+    MaxValue: 1000
+    ConstraintDescription: Please enter a value between 8 and 1000 GiB for the root volume.
+
+  SecurityGroups:
+    Description: Existing security groups to attach to the EC2 instance
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    ConstraintDescription: Please select at least one existing security group.
+
+  AdditionalVolumeSize:
+    Description: Size (in GiB) of an additional volume to attach (set to 0 for no additional volume)
+    Type: Number
+    Default: 0
+    MinValue: 0
+    MaxValue: 1000
+    ConstraintDescription: Please enter a value between 0 and 1000 GiB for the additional volume.
+
+  VpcId:
+    Description: ID of the VPC where the EC2 instance will be launched
+    Type: AWS::EC2::VPC::Id
+
+  SubnetId:
+    Description: ID of the subnet within the selected VPC
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateIpAddress:
+    Description: Private IP address for the EC2 instance
+    Type: String
+    Default: ""
+    ConstraintDescription: Please enter a valid private IP address.
+
+  KeyName:
+    Description: Name of an existing EC2 Key Pair for SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+
+  OperatingSystem:
+    Description: Operating system for the EC2 instance
+    Type: String
+    Default: AmazonLinux2
+    AllowedValues:
+      - AmazonLinux2
+      - CentOS8
+      - CentOS9
+      - RedHat8
+      - RedHat9
+      - AmazonLinux2023
+      - RockyLinux8
+      - RockyLinux9
+    ConstraintDescription: Please select a valid operating system.
+
+Mappings:
+  RegionMap:
+    eu-central-1:
+      AmazonLinux2: ami-0f845a2bba44d24b2
+      CentOS8: ami-09210098ed8058dc5
+      CentOS9: ami-033904b72296b59e1
+      RedHat8: ami-08a798c6dd8292289
+      RedHat9: ami-03cbad7144aeda3eb
+      AmazonLinux2023: ami-01342111f883d5e4e
+      RockyLinux8: ami-0cfdf91ea903a6111
+      RockyLinux9: ami-00297d5e47600069b
+    eu-west-1:
+      AmazonLinux2: ami-0edf2e22c3a26885c
+      CentOS8: ami-05fece8b99291a93a
+      CentOS9: ami-058056564b72ad2c1
+      RedHat8: ami-08c14f87f20358fb7
+      RedHat9: ami-013d87f7217614e10
+      AmazonLinux2023: ami-08f32efd140b7d89f
+      RockyLinux8: ami-0a146b80658a33ac5
+      RockyLinux9: ami-075deb8a8baba7096
+
+Resources:
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref "AWS::Region"
+        - !Ref OperatingSystem
+      KeyName: !Ref KeyName
+      SecurityGroupIds: !Ref SecurityGroups
+      SubnetId: !Ref SubnetId
+      PrivateIpAddress: !If [HasPrivateIpAddress, !Ref PrivateIpAddress, !Ref "AWS::NoValue"]
+      BlockDeviceMappings:
+        - DeviceName: !If [IsAmazonLinux, '/dev/xvda', '/dev/sda1']
+          Ebs:
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
+        - Fn::If:
+          - AdditionalVolumeRequested
+          - DeviceName: /dev/sdf
+            Ebs:
+              VolumeSize: !Ref AdditionalVolumeSize
+              VolumeType: gp3
+          - !Ref "AWS::NoValue"
+      Tags:
+        - Key: Name
+          Value: !Ref InstanceName
+
+Outputs:
+  EC2InstanceId:
+    Description: ID of the created EC2 instance
+    Value: !Ref EC2Instance
+
+Conditions:
+  HasPrivateIpAddress:
+    !Not [!Equals [!Ref PrivateIpAddress, ""]]
+  AdditionalVolumeRequested:
+    !Not [!Equals [!Ref AdditionalVolumeSize, 0]]
+  IsAmazonLinux:
+    !Equals [!Ref OperatingSystem, "AmazonLinux2"]
